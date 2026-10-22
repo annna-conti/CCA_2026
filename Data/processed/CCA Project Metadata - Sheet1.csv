@@ -1,0 +1,20 @@
+SampleID,SampleType,CCA_Morphology,SampleOG,SampleLabel,Quantification,ControlType,Host_Genus,Host_Species
+barcode01,CCA,encrusting,1A,encrusting_01,14,none,NF,NF
+barcode02,CCA,encrusting,1B,encrusting_02,15,none,Phymatolithon ,NF
+barcode03,CCA,encrusting,2A,encrusting_03,17,none,Lithophyllum,lichenare
+barcode04,CCA,encrusting,2B,encrusting_04,33,none,Lithophyllum,lichenare
+barcode05,CCA,encrusting,3A,encrusting_05,14,none,NF,NF
+barcode06,CCA,encrusting,3B,encrusting_06,19,none,NF,NF
+barcode07,CCA,encrusting,4A,encrusting_07,23,none,Lithophyllum,lichenare
+barcode08,CCA,encrusting,4B,encrusting_08,17,none,Lithophyllum,lichenare
+barcode09,CCA,encrusting,4C,encrusting_09,20,none,NF,NF
+barcode10,CCA,encrusting,5,encrusting_10,13,none,NF,NF
+barcode11,CCA,branching,6A,branching_01,21,none,Lithopyllum,imitans
+barcode12,CCA,encrusting,8,encrusting_11,16,none,Chamberlainium,dicipiens
+barcode13,CCA,encrusting,9,encrusting_12,15,none,NF,NF
+barcode14,CCA,branching,10,branching_02,11,none,Calliarthron,tuberculosum
+barcode15,water1,NA,S1,water_01,10,none,NA,NA
+barcode16,water2,NA,S2,water_02,3.97,none,NA,NA
+barcode17,water3,NA,S3,water_03,5.12,none,NA,NA
+barcode18,control,NA,NEG,control_neg,2.5,negative,NA,NA
+barcode19,control,NA,POS,control_pos,38,positive,NA,NA

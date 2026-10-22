@@ -153,3 +153,44 @@ identical(
   rownames(counts_clean),
   rownames(tax_clean)
 )
+
+###################now turn counts_clean and tax_clean back into a phyloseq object to use decontam cleanly############
+library(phyloseq)
+
+otu_clean <- otu_table(
+  counts_clean,
+  taxa_are_rows = TRUE
+)
+
+tax_clean_ps <- tax_table(
+  as.matrix(tax_clean)
+)
+
+sample_data(ps_raw)
+
+ps_clean <- phyloseq(
+  otu_clean,
+  tax_clean_ps
+)
+
+ps_clean <- phyloseq(
+  otu_clean,
+  tax_clean_ps
+)
+
+ps_clean
+ntaxa(ps_clean)
+nsamples(ps_clean)
+
+dir.create(
+  "processed",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+saveRDS(
+  ps_clean,
+  "processed/annabelle_16S_taxclean_predecontam_phyloseq.rds"
+)
+
+

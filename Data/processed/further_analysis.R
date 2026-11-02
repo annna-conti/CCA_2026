@@ -931,3 +931,934 @@ vegan::permutest(
   disp_lichenare,
   permutations = 999
 )
+
+############################################################
+###################INDICATOR ANALYSIS#######################
+############################################################
+
+install.packages("indicspecies")
+library(indicspecies)
+library(permute)
+
+lichenare_group <- factor(
+  meta_encrusting$Lichenare_group,
+  levels = c(
+    "Other",
+    "L_lithophyllum_lichenare"
+  )
+)
+
+table(lichenare_group)
+
+#removing taxa that are too rare to be informative
+taxon_prevalence <- colSums(beta_encrusting > 0)
+#beta_encrusting has relative abundance values, not raw read counts 
+
+beta_encrusting_ind <- beta_encrusting[
+  ,
+  taxon_prevalence >= 3,
+  drop = FALSE
+]
+
+dim(beta_encrusting_ind)
+#this only keeps taxa found in at least 3 encrusting samples to help reduce noise --> got 12 encrusting samples x 558 bacterial taxa
+
+#running actual indicator value test
+set.seed(123)
+
+indval_lichenare <- indicspecies::multipatt(
+  beta_encrusting_ind,
+  lichenare_group,
+  func = "IndVal.g",
+  duleg = TRUE,
+  control = permute::how(nperm = 999)
+)
+
+summary(
+  indval_lichenare,
+  indvalcomp = TRUE,
+  alpha = 0.05
+)
+#gave 16 bacterial taxa associated with lichenare and 28 with other encrusting samples 
+
+#attaching taxonomy to the indicator taxa
+tax_df <- as.data.frame(
+  as(
+    phyloseq::tax_table(ps_analysis),
+    "matrix"
+  )
+)
+
+tax_df$Taxon <- rownames(tax_df)
+
+indval_results <- indval_lichenare$sign
+
+indval_results$Taxon <- rownames(indval_results)
+
+indval_results_tax <- dplyr::left_join(
+  indval_results,
+  tax_df,
+  by = "Taxon"
+)
+
+colnames(indval_results_tax)
+
+#pull out the 16 taxa significantlly associated with lichenare 
+lichenare_indicators <- indval_results_tax %>%
+  dplyr::filter(
+    s.L_lithophyllum_lichenare == 1,
+    p.value < 0.05
+  ) %>%
+  dplyr::select(
+    Taxon,
+    phylum,
+    class,
+    order,
+    family,
+    genus,
+    species,
+    stat,
+    p.value
+  ) %>%
+  dplyr::arrange(p.value)
+
+lichenare_indicators
+
+##################ugh ok the correction i did and deleted before is messing things up so remake the inval values table 
+indval_raw <- indval_lichenare$sign
+
+indval_raw$Taxon <- rownames(indval_raw)
+
+indval_raw <- dplyr::left_join(
+  indval_raw,
+  tax_df,
+  by = "Taxon"
+)
+
+lichenare_indicators_raw <- indval_raw %>%
+  dplyr::filter(
+    s.L_lithophyllum_lichenare == 1,
+    p.value < 0.05
+  ) %>%
+  dplyr::select(
+    Taxon,
+    phylum,
+    class,
+    order,
+    family,
+    genus,
+    species,
+    stat,
+    p.value
+  ) %>%
+  dplyr::arrange(p.value)
+
+lichenare_indicators_raw
+
+
+##############trying to do branching vs encrusting indicator analysis##################
+morph_group <- factor(
+  meta_CCA_df$CCA_Morphology,
+  levels = c("encrusting", "branching")
+)
+
+table(morph_group)
+
+taxon_prevalence_morph <- colSums(beta_CCA > 0)
+
+beta_CCA_ind <- beta_CCA[
+  ,
+  taxon_prevalence_morph >= 3,
+  drop = FALSE
+]
+
+dim(beta_CCA_ind)
+
+#taxa were retained if they occurred in at least 3 of the 14 CCA samples. removes extremely rare samples
+
+set.seed(123)
+
+indval_morph <- indicspecies::multipatt(
+  beta_CCA_ind,
+  morph_group,
+  func = "IndVal.g",
+  duleg = TRUE,
+  control = permute::how(nperm = 999)
+)
+
+summary(
+  indval_morph,
+  indvalcomp = TRUE,
+  alpha = 0.05
+)
+#found a smaller set of individual taxa associated with each morphology
+#most interested in ones that have A and B = 1.000
+#branching results are less secure just because there are only two samples 
+
+#attach taxonomy
+indval_morph_raw <- indval_morph$sign
+
+indval_morph_raw$Taxon <- rownames(indval_morph_raw)
+
+indval_morph_tax <- dplyr::left_join(
+  indval_morph_raw,
+  tax_df,
+  by = "Taxon"
+)
+
+encrusting_indicators <- indval_morph_tax %>%
+  dplyr::filter(
+    s.encrusting == 1,
+    p.value < 0.05
+  ) %>%
+  dplyr::select(
+    Taxon,
+    phylum,
+    class,
+    order,
+    family,
+    genus,
+    species,
+    stat,
+    p.value
+  ) %>%
+  dplyr::arrange(dplyr::desc(stat))
+
+encrusting_indicators
+#these taxa were specifically associated with encrusting CCA relative to branching CCA 
+
+#want to make a stacked bar plot showing the relative abundance of just those indicator taxa across all CCA samples 
+indicator_ids <- encrusting_indicators$Taxon
+
+indicator_mat <- beta_CCA[
+  ,
+  indicator_ids,
+  drop = FALSE
+]
+
+indicator_df <- as.data.frame(indicator_mat)
+
+indicator_df$SampleID <- rownames(indicator_df)
+
+indicator_long <- indicator_df %>%
+  tidyr::pivot_longer(
+    cols = -SampleID,
+    names_to = "Taxon",
+    values_to = "RelativeAbundance"
+  )
+
+indicator_tax_labels <- encrusting_indicators %>%
+  dplyr::mutate(
+    TaxonLabel = dplyr::case_when(
+      !is.na(species) & species != "" &
+        !is.na(genus) & genus != "" ~
+        paste(genus, species),
+      
+      !is.na(genus) & genus != "" ~
+        genus,
+      
+      TRUE ~ Taxon
+    )
+  ) %>%
+  dplyr::select(
+    Taxon,
+    TaxonLabel
+  )
+
+indicator_long <- indicator_long %>%
+  dplyr::left_join(
+    indicator_tax_labels,
+    by = "Taxon"
+  ) %>%
+  dplyr::left_join(
+    meta_CCA_df %>%
+      dplyr::mutate(
+        SampleID = rownames(meta_CCA_df)
+      ) %>%
+      dplyr::select(
+        SampleID,
+        CCA_Morphology
+      ),
+    by = "SampleID"
+  )
+
+
+sample_order <- indicator_long %>%
+  dplyr::distinct(
+    SampleID,
+    CCA_Morphology
+  ) %>%
+  dplyr::arrange(
+    factor(
+      CCA_Morphology,
+      levels = c("encrusting", "branching")
+    ),
+    SampleID
+  ) %>%
+  dplyr::pull(SampleID)
+
+indicator_long$SampleID <- factor(
+  indicator_long$SampleID,
+  levels = sample_order
+)
+
+sample_labels <- meta_CCA_df %>%
+  dplyr::mutate(
+    SampleID = rownames(meta_CCA_df),
+    
+    HostLabel = dplyr::case_when(
+      
+      # Genus and species identified
+      !is.na(Host_Genus) &
+        Host_Genus != "NF" &
+        !is.na(Host_Species) &
+        Host_Species != "NF" ~
+        paste(Host_Genus, Host_Species),
+      
+      # Genus identified, species not identified
+      !is.na(Host_Genus) &
+        Host_Genus != "NF" ~
+        paste0(Host_Genus, " sp."),
+      
+      # No taxonomic ID
+      TRUE ~ "Unidentified"
+    ),
+    
+    PlotLabel = paste0(
+      SampleID,
+      "\n",
+      HostLabel
+    )
+  )
+
+sample_label_vector <- setNames(
+  sample_labels$PlotLabel,
+  sample_labels$SampleID
+)
+
+ggplot2::ggplot(
+  indicator_long,
+  ggplot2::aes(
+    x = SampleID,
+    y = RelativeAbundance,
+    fill = TaxonLabel
+  )
+) +
+  ggplot2::geom_col() +
+  ggplot2::facet_grid(
+    ~ CCA_Morphology,
+    scales = "free_x",
+    space = "free_x"
+  ) +
+  ggplot2::scale_x_discrete(
+    labels = sample_label_vector
+  ) +
+  ggplot2::scale_y_continuous(
+    labels = scales::percent
+  ) +
+  ggplot2::labs(
+    title = "Relative abundance of encrusting CCA indicator taxa",
+    x = "Sample and host taxon",
+    y = "Relative abundance",
+    fill = "Indicator taxon"
+  ) +
+  ggplot2::theme_classic() +
+  ggplot2::theme(
+    axis.text.x = ggplot2::element_text(
+      angle = 45,
+      hjust = 1,
+      size = 8
+    )
+  )
+#the bars don't go to 100 because they show what fraction of the entire bacterial community is represented by these 9 candidate taxa
+#this lets us see what is genuinely abundant or just statistically consistent at low abundance 
+
+
+#getting rid of the EMU_taxon_78 and ordering things by how similar they are 
+
+# ============================================================
+# 8 ENCRUSTING INDICATOR TAXA
+# Remove EMU_Taxon_78 and visualize relative abundance
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 1. Select the 8 indicator taxa
+# ------------------------------------------------------------
+
+indicator_ids_8 <- encrusting_indicators %>%
+  dplyr::filter(Taxon != "EMU_Taxon_78") %>%
+  dplyr::pull(Taxon)
+
+
+# Pull their relative abundances from the CCA community table
+# Rows = samples
+# Columns = bacterial taxa
+
+indicator_mat_8 <- beta_CCA[
+  ,
+  indicator_ids_8,
+  drop = FALSE
+]
+
+
+# ------------------------------------------------------------
+# 2. Order taxa by similarity in abundance pattern
+# ------------------------------------------------------------
+
+# IMPORTANT:
+# taxa are COLUMNS, so do NOT transpose this matrix here
+
+taxon_cor <- cor(
+  indicator_mat_8,
+  method = "spearman"
+)
+
+# Convert correlation to a distance
+taxon_dist <- as.dist(1 - taxon_cor)
+
+# Cluster taxa with similar abundance patterns
+taxon_cluster <- hclust(
+  taxon_dist,
+  method = "average"
+)
+
+# Extract taxon order from clustering
+taxon_order <- colnames(indicator_mat_8)[
+  taxon_cluster$order
+]
+
+taxon_order
+
+# ------------------------------------------------------------
+# 3. Create readable bacterial taxon labels
+# ------------------------------------------------------------
+
+indicator_tax_labels_8 <- encrusting_indicators %>%
+  dplyr::filter(Taxon != "EMU_Taxon_78") %>%
+  dplyr::mutate(
+    TaxonLabel = dplyr::case_when(
+      
+      # Genus + species available
+      !is.na(genus) &
+        genus != "" &
+        !is.na(species) &
+        species != "" ~
+        paste(genus, species),
+      
+      # Only genus available
+      !is.na(genus) &
+        genus != "" ~
+        genus,
+      
+      # Fallback
+      TRUE ~ Taxon
+    )
+  ) %>%
+  dplyr::select(
+    Taxon,
+    TaxonLabel
+  )
+
+
+# Match readable names to the similarity-based order
+
+taxon_label_order <- indicator_tax_labels_8$TaxonLabel[
+  match(
+    taxon_order,
+    indicator_tax_labels_8$Taxon
+  )
+]
+
+taxon_label_order
+
+# ------------------------------------------------------------
+# 4. Convert to long dataframe
+# ------------------------------------------------------------
+
+indicator_df_8 <- as.data.frame(
+  indicator_mat_8
+)
+
+indicator_df_8$SampleID <- rownames(
+  indicator_df_8
+)
+
+
+indicator_long_8 <- indicator_df_8 %>%
+  tidyr::pivot_longer(
+    cols = -SampleID,
+    names_to = "Taxon",
+    values_to = "RelativeAbundance"
+  ) %>%
+  dplyr::left_join(
+    indicator_tax_labels_8,
+    by = "Taxon"
+  )
+
+
+# Apply similarity-based taxon order
+
+indicator_long_8$TaxonLabel <- factor(
+  indicator_long_8$TaxonLabel,
+  levels = taxon_label_order
+)
+
+
+# ------------------------------------------------------------
+# 5. Create sample labels with host taxonomy
+# ------------------------------------------------------------
+
+sample_labels <- meta_CCA_df %>%
+  dplyr::mutate(
+    SampleID = rownames(meta_CCA_df),
+    
+    HostLabel = dplyr::case_when(
+      
+      # Genus + species known
+      !is.na(Host_Genus) &
+        Host_Genus != "NF" &
+        !is.na(Host_Species) &
+        Host_Species != "NF" ~
+        paste(
+          Host_Genus,
+          Host_Species
+        ),
+      
+      # Only genus known
+      !is.na(Host_Genus) &
+        Host_Genus != "NF" ~
+        paste0(
+          Host_Genus,
+          " sp."
+        ),
+      
+      # No host identification
+      TRUE ~
+        "Unidentified"
+    ),
+    
+    PlotLabel = paste0(
+      SampleID,
+      "\n",
+      HostLabel
+    )
+  )
+
+
+# Add morphology and host labels to abundance dataframe
+
+indicator_long_8 <- indicator_long_8 %>%
+  dplyr::left_join(
+    sample_labels %>%
+      dplyr::select(
+        SampleID,
+        CCA_Morphology,
+        PlotLabel
+      ),
+    by = "SampleID"
+  )
+
+# ------------------------------------------------------------
+# 6. Set sample order
+# ------------------------------------------------------------
+
+sample_order <- sample_labels %>%
+  dplyr::filter(
+    SampleID %in% rownames(beta_CCA)
+  ) %>%
+  dplyr::arrange(
+    factor(
+      CCA_Morphology,
+      levels = c(
+        "encrusting",
+        "branching"
+      )
+    ),
+    SampleID
+  ) %>%
+  dplyr::pull(SampleID)
+
+
+indicator_long_8$SampleID <- factor(
+  indicator_long_8$SampleID,
+  levels = sample_order
+)
+
+
+# Named vector for x-axis labels
+
+sample_label_vector <- setNames(
+  sample_labels$PlotLabel,
+  sample_labels$SampleID
+)
+
+table(
+  indicator_long_8$TaxonLabel,
+  useNA = "ifany"
+)
+
+
+# ------------------------------------------------------------
+# 7. FACETED RELATIVE ABUNDANCE PLOT
+# ------------------------------------------------------------
+
+indicator_facet_plot <- ggplot2::ggplot(
+  indicator_long_8,
+  ggplot2::aes(
+    x = SampleID,
+    y = RelativeAbundance,
+    fill = CCA_Morphology
+  )
+) +
+  
+  ggplot2::geom_col() +
+  
+  ggplot2::facet_wrap(
+    ~ TaxonLabel,
+    ncol = 2
+  ) +
+  
+  ggplot2::scale_x_discrete(
+    labels = sample_label_vector
+  ) +
+  
+  ggplot2::scale_y_continuous(
+    labels = scales::percent
+  ) +
+  
+  ggplot2::labs(
+    title = "Relative abundance of encrusting CCA indicator taxa",
+    x = "Sample and host taxon",
+    y = "Relative abundance",
+    fill = "CCA morphology"
+  ) +
+  
+  ggplot2::theme_classic() +
+  
+  ggplot2::theme(
+    axis.text.x = ggplot2::element_text(
+      angle = 45,
+      hjust = 1,
+      size = 6
+    ),
+    strip.text = ggplot2::element_text(
+      face = "italic"
+    )
+  )
+
+
+indicator_facet_plot
+
+
+########################################
+###doing this with water samples too####
+########################################
+meta_three <- as.data.frame(
+  phyloseq::sample_data(ps_analysis)
+)
+
+meta_three$Group3 <- dplyr::case_when(
+  meta_three$Environment == "Water" ~ "Water",
+  meta_three$CCA_Morphology == "branching" ~ "Branching",
+  meta_three$CCA_Morphology == "encrusting" ~ "Encrusting",
+  TRUE ~ NA_character_
+)
+
+meta_three$Group3 <- factor(
+  meta_three$Group3,
+  levels = c(
+    "Encrusting",
+    "Branching",
+    "Water"
+  )
+)
+
+table(meta_three$Group3)
+
+
+taxon_prevalence_three <- colSums(beta_rel > 0)
+
+beta_three_ind <- beta_rel[
+  ,
+  taxon_prevalence_three >= 3,
+  drop = FALSE
+]
+
+dim(beta_three_ind)
+
+
+group_three <- meta_three$Group3
+
+names(group_three) <- rownames(meta_three)
+
+group_three <- group_three[
+  rownames(beta_three_ind)
+]
+
+table(group_three)
+
+
+
+set.seed(123)
+
+indval_three <- indicspecies::multipatt(
+  beta_three_ind,
+  group_three,
+  func = "IndVal.g",
+  duleg = TRUE,
+  control = permute::how(nperm = 999)
+)
+
+summary(
+  indval_three,
+  indvalcomp = TRUE,
+  alpha = 0.05
+)
+
+
+# Pull original, uncorrected indicator results
+indval_three_raw <- indval_three$sign
+
+indval_three_raw$Taxon <- rownames(indval_three_raw)
+
+# Attach bacterial taxonomy
+indval_three_tax <- dplyr::left_join(
+  indval_three_raw,
+  tax_df,
+  by = "Taxon"
+)
+
+# Extract only Encrusting indicators
+encrusting_indicators_three <- indval_three_tax %>%
+  dplyr::filter(
+    s.Encrusting == 1,
+    p.value < 0.05
+  ) %>%
+  dplyr::select(
+    Taxon,
+    phylum,
+    class,
+    order,
+    family,
+    genus,
+    species,
+    stat,
+    p.value
+  ) %>%
+  dplyr::arrange(
+    dplyr::desc(stat)
+  )
+
+encrusting_indicators_three
+
+#stacked relative-abundance chart across all 17 biological samples
+indicator_ids_three <- encrusting_indicators_three %>%
+  dplyr::filter(Taxon != "EMU_Taxon_78") %>%
+  dplyr::pull(Taxon)
+
+# Pull relative abundance values from ALL 17 biological samples
+indicator_mat_three <- beta_rel[
+  ,
+  indicator_ids_three,
+  drop = FALSE
+]
+
+indicator_tax_labels_three <- encrusting_indicators_three %>%
+  dplyr::filter(Taxon != "EMU_Taxon_78") %>%
+  dplyr::mutate(
+    TaxonLabel = dplyr::case_when(
+      !is.na(genus) & genus != "" &
+        !is.na(species) & species != "" ~
+        paste(genus, species),
+      
+      !is.na(genus) & genus != "" ~
+        genus,
+      
+      TRUE ~ Taxon
+    )
+  ) %>%
+  dplyr::select(
+    Taxon,
+    TaxonLabel
+  )
+
+
+
+taxon_cor_three <- cor(
+  indicator_mat_three,
+  method = "spearman"
+)
+
+taxon_dist_three <- as.dist(
+  1 - taxon_cor_three
+)
+
+taxon_cluster_three <- hclust(
+  taxon_dist_three,
+  method = "average"
+)
+
+taxon_order_three <- colnames(indicator_mat_three)[
+  taxon_cluster_three$order
+]
+
+taxon_label_order_three <-
+  indicator_tax_labels_three$TaxonLabel[
+    match(
+      taxon_order_three,
+      indicator_tax_labels_three$Taxon
+    )
+  ]
+
+
+indicator_df_three <- as.data.frame(
+  indicator_mat_three
+)
+
+indicator_df_three$SampleID <- rownames(
+  indicator_df_three
+)
+
+indicator_long_three <- indicator_df_three %>%
+  tidyr::pivot_longer(
+    cols = -SampleID,
+    names_to = "Taxon",
+    values_to = "RelativeAbundance"
+  ) %>%
+  dplyr::left_join(
+    indicator_tax_labels_three,
+    by = "Taxon"
+  )
+
+indicator_long_three$TaxonLabel <- factor(
+  indicator_long_three$TaxonLabel,
+  levels = taxon_label_order_three
+)
+
+
+# -------------------------------
+# Rebuild meta_three as a plain data frame
+# -------------------------------
+
+meta_three_df <- data.frame(
+  phyloseq::sample_data(ps_analysis),
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+
+meta_three_df$SampleID <- rownames(meta_three_df)
+
+meta_three_df$Group3 <- dplyr::case_when(
+  meta_three_df$Environment == "Water" ~ "Water",
+  meta_three_df$CCA_Morphology == "branching" ~ "Branching",
+  meta_three_df$CCA_Morphology == "encrusting" ~ "Encrusting",
+  TRUE ~ NA_character_
+)
+
+meta_three_df$Group3 <- factor(
+  meta_three_df$Group3,
+  levels = c("Encrusting", "Branching", "Water")
+)
+
+# -------------------------------
+# Create sample labels
+# -------------------------------
+
+sample_labels_three <- meta_three_df %>%
+  dplyr::mutate(
+    HostLabel = dplyr::case_when(
+      Group3 == "Water" ~ "Water",
+      
+      !is.na(Host_Genus) &
+        Host_Genus != "NF" &
+        !is.na(Host_Species) &
+        Host_Species != "NF" ~
+        paste(Host_Genus, Host_Species),
+      
+      !is.na(Host_Genus) &
+        Host_Genus != "NF" ~
+        paste0(Host_Genus, " sp."),
+      
+      TRUE ~ "Unidentified"
+    ),
+    
+    PlotLabel = paste0(
+      SampleID,
+      "\n",
+      HostLabel
+    )
+  )
+
+# -------------------------------
+# Join labels back to plotting dataframe
+# -------------------------------
+
+indicator_long_three <- indicator_long_three %>%
+  dplyr::left_join(
+    sample_labels_three %>%
+      dplyr::select(
+        SampleID,
+        Group3,
+        PlotLabel
+      ),
+    by = "SampleID"
+  )
+
+# -------------------------------
+# Order samples: Encrusting -> Branching -> Water
+# -------------------------------
+
+sample_order_three <- sample_labels_three %>%
+  dplyr::arrange(Group3, SampleID) %>%
+  dplyr::pull(SampleID)
+
+indicator_long_three$SampleID <- factor(
+  indicator_long_three$SampleID,
+  levels = sample_order_three
+)
+
+sample_label_vector_three <- setNames(
+  sample_labels_three$PlotLabel,
+  sample_labels_three$SampleID
+)
+
+
+
+indicator_three_stacked <- ggplot2::ggplot(
+  indicator_long_three,
+  ggplot2::aes(
+    x = SampleID,
+    y = RelativeAbundance,
+    fill = TaxonLabel
+  )
+) +
+  ggplot2::geom_col() +
+  ggplot2::facet_grid(
+    ~ Group3,
+    scales = "free_x",
+    space = "free_x"
+  ) +
+  ggplot2::scale_x_discrete(
+    labels = sample_label_vector_three
+  ) +
+  ggplot2::scale_y_continuous(
+    labels = scales::percent
+  ) +
+  ggplot2::labs(
+    title = "Relative abundance of encrusting CCA indicator taxa",
+    subtitle = "Encrusting, branching, and water samples",
+    x = "Sample and host taxon",
+    y = "Relative abundance",
+    fill = "Indicator taxon"
+  ) +
+  ggplot2::theme_classic() +
+  ggplot2::theme(
+    axis.text.x = ggplot2::element_text(
+      angle = 45,
+      hjust = 1,
+      size = 7
+    )
+  )
+
+indicator_three_stacked
